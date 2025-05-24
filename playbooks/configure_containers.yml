@@ -1,0 +1,43 @@
+- name: Configure Docker Containers
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Configure ubuntu-1 container
+      shell: |
+        docker exec ubuntu-1 bash -c "
+          ip addr add 172.16.20.10/24 dev eth0
+          ip link set eth0 up
+          ip route add default via 172.16.20.1
+          echo 'Container ubuntu-1 configured with IP 172.16.20.10'
+        "
+      register: ubuntu1_result
+      ignore_errors: true
+
+    - name: Configure ubuntu-2 (Ansible) container
+      shell: |
+        docker exec ubuntu-2 bash -c "
+          ip addr add 172.16.10.10/24 dev eth0
+          ip link set eth0 up
+          ip route add default via 172.16.10.1
+          echo 'Container ubuntu-2 configured with IP 172.16.10.10'
+        "
+      register: ubuntu2_result
+      ignore_errors: true
+
+    - name: Configure postgres-1 container
+      shell: |
+        docker exec postgres-1 bash -c "
+          ip addr add 172.16.30.10/24 dev eth0
+          ip link set eth0 up
+          ip route add default via 172.16.30.1
+          echo 'Container postgres-1 configured with IP 172.16.30.10'
+        "
+      register: postgres_result
+      ignore_errors: true
+
+    - name: Display results
+      debug:
+        msg: |
+          Ubuntu-1 configuration: {{ 'SUCCESS' if ubuntu1_result.rc == 0 else 'FAILED' }}
+          Ubuntu-2 configuration: {{ 'SUCCESS' if ubuntu2_result.rc == 0 else 'FAILED' }}
+          PostgreSQL configuration: {{ 'SUCCESS' if postgres_result.rc == 0 else 'FAILED' }}

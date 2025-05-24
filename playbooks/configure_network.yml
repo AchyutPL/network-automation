@@ -1,0 +1,204 @@
+- name: Configure All Network Devices
+  hosts: all
+  gather_facts: false
+  vars:
+    vlans:
+      - id: 10
+        name: MANAGEMENT
+      - id: 20
+        name: APPLICATION
+      - id: 30
+        name: DATABASE
+
+    # Interface configurations
+    router_interfaces:
+      R1:
+        - name: GigabitEthernet0/0
+          description: "Connection to Switch1"
+          ip_address: 192.168.100.2 255.255.255.0
+          state: up
+        - name: GigabitEthernet0/0.10
+          description: "Management VLAN"
+          encapsulation: dot1q 10
+          ip_address: 172.16.10.1 255.255.255.0
+          state: up
+        - name: GigabitEthernet0/0.20
+          description: "Application VLAN"
+          encapsulation: dot1q 20
+          ip_address: 172.16.20.1 255.255.255.0
+          state: up
+        - name: GigabitEthernet0/0.30
+          description: "Database VLAN"
+          encapsulation: dot1q 30
+          ip_address: 172.16.30.1 255.255.255.0
+          state: up
+
+    switch_interfaces:
+      Switch1:
+        - name: GigabitEthernet0/0
+          description: "Connection to R1"
+          switchport_mode: trunk
+          allowed_vlans: "10,20,30"
+        - name: GigabitEthernet0/1
+          description: "Connection to Cloud"
+          switchport_mode: trunk
+          allowed_vlans: "10,20,30"
+        - name: GigabitEthernet0/2
+          description: "Connection to Spine1"
+          switchport_mode: trunk
+          allowed_vlans: "10,20,30"
+        - name: GigabitEthernet0/3
+          description: "Connection to Spine2"
+          switchport_mode: trunk
+          allowed_vlans: "10,20,30"
+
+      Spine1:
+        - name: GigabitEthernet0/0
+          description: "Connection to Switch1"
+          switchport_mode: trunk
+          allowed_vlans: "10,20,30"
+        - name: GigabitEthernet0/1
+          description: "Connection to Spine2"
+          switchport_mode: trunk
+          allowed_vlans: "10,20,30"
+        - name: GigabitEthernet0/2
+          description: "Connection to Leaf1"
+          switchport_mode: trunk
+          allowed_vlans: "10,20,30"
+        - name: GigabitEthernet0/3
+          description: "Connection to Leaf2"
+          switchport_mode: trunk
+          allowed_vlans: "10,20,30"
+
+      Spine2:
+        - name: GigabitEthernet0/0
+          description: "Connection to Switch1"
+          switchport_mode: trunk
+          allowed_vlans: "10,20,30"
+        - name: GigabitEthernet0/1
+          description: "Connection to Spine1"
+          switchport_mode: trunk
+          allowed_vlans: "10,20,30"
+        - name: GigabitEthernet0/2
+          description: "Connection to Leaf1"
+          switchport_mode: trunk
+          allowed_vlans: "10,20,30"
+        - name: GigabitEthernet0/3
+          description: "Connection to Leaf3"
+          switchport_mode: trunk
+          allowed_vlans: "10,20,30"
+
+      Leaf1:
+        - name: GigabitEthernet0/0
+          description: "Connection to Spine1"
+          switchport_mode: trunk
+          allowed_vlans: "10,20,30"
+        - name: GigabitEthernet0/1
+          description: "Connection to Spine2"
+          switchport_mode: trunk
+          allowed_vlans: "10,20,30"
+        - name: GigabitEthernet0/2
+          description: "Connection to ubuntu-1"
+          switchport_mode: access
+          access_vlan: 20
+        - name: GigabitEthernet0/3
+          description: "Connection to ubuntu-2"
+          switchport_mode: access
+          access_vlan: 10
+
+      Leaf2:
+        - name: GigabitEthernet0/0
+          description: "Connection to Spine1"
+          switchport_mode: trunk
+          allowed_vlans: "10,20,30"
+        - name: GigabitEthernet0/1
+          description: "Connection to Spine2"
+          switchport_mode: trunk
+          allowed_vlans: "10,20,30"
+
+      Leaf3:
+        - name: GigabitEthernet0/0
+          description: "Connection to Spine1"
+          switchport_mode: trunk
+          allowed_vlans: "10,20,30"
+        - name: GigabitEthernet0/1
+          description: "Connection to Spine2"
+          switchport_mode: trunk
+          allowed_vlans: "10,20,30"
+        - name: GigabitEthernet0/2
+          description: "Connection to postgres-1"
+          switchport_mode: access
+          access_vlan: 30
+
+    # Routing configurations
+    static_routes:
+      R1:
+        - network: 0.0.0.0 0.0.0.0
+          next_hop: 192.168.100.1
+
+      CiscoPhysical:
+        - network: 10.0.0.0 255.0.0.0
+          next_hop: 192.168.100.2
+        - network: 172.16.0.0 255.255.0.0
+          next_hop: 192.168.100.2
+
+  tasks:
+    # TASK 1: Configure hostnames
+    - name: Configure Hostname
+      ios_config:
+        lines:
+          - hostname {{ inventory_hostname }}
+      when: inventory_hostname != 'CiscoPhysical'
+      register: hostname_config
+
+    # TASK 2: Configure VLANs on all switches
+    - name: Create VLANs on switches
+      ios_config:
+        lines:
+          - vlan {{ item.id }}
+          - name {{ item.name }}
+      loop: "{{ vlans }}"
+      when: inventory_hostname in groups['switches']
+      register: vlan_config
+
+    # TASK 3: Configure router interfaces
+    - name: Configure Router Interfaces
+      ios_config:
+        lines:
+          - description {{ item.description | default(omit) }}
+          - ip address {{ item.ip_address }}
+          - "{{ 'encapsulation ' + item.encapsulation if item.encapsulation is defined else '' }}"
+          - no shutdown
+        parents: interface {{ item.name }}
+      loop: "{{ router_interfaces[inventory_hostname] | default([]) }}"
+      when: inventory_hostname in groups['routers']
+      register: router_interface_config
+
+    # TASK 4: Configure switch interfaces
+    - name: Configure Switch Interfaces
+      ios_config:
+        lines:
+          - description {{ item.description | default(omit) }}
+          - "{{ 'switchport mode ' + item.switchport_mode if item.switchport_mode is defined else '' }}"
+          - "{{ 'switchport trunk allowed vlan ' + item.allowed_vlans if item.allowed_vlans is defined else '' }}"
+          - "{{ 'switchport access vlan ' + item.access_vlan|string if item.access_vlan is defined else '' }}"
+          - no shutdown
+        parents: interface {{ item.name }}
+      loop: "{{ switch_interfaces[inventory_hostname] | default([]) }}"
+      when: inventory_hostname in groups['switches']
+      register: switch_interface_config
+
+    # TASK 5: Configure static routes
+    - name: Configure Static Routes
+      ios_config:
+        lines:
+          - ip route {{ item.network }} {{ item.next_hop }}
+      loop: "{{ static_routes[inventory_hostname] | default([]) }}"
+      when: inventory_hostname in groups['routers'] or inventory_hostname == 'CiscoPhysical'
+      register: route_config
+
+    # TASK 6: Save configuration
+    - name: Save running config
+      ios_config:
+        save_when: always
+      when: hostname_config.changed or vlan_config.changed or router_interface_config.changed or switch_interface_config.changed or route_config.changed

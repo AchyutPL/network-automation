@@ -1,0 +1,28 @@
+[routers]
+R1 ansible_host=192.168.100.2
+
+[spine_switches]
+Spine1
+Spine2
+
+[leaf_switches]
+Leaf1
+Leaf2
+Leaf3
+
+[edge_switches]
+Switch1
+
+[physical_router]
+CiscoPhysical ansible_host=192.168.100.1
+
+[switches:children]
+spine_switches
+leaf_switches
+edge_switches
+
+[all:vars]
+ansible_connection=network_cli
+ansible_user=admin
+ansible_password=cisco
+ansible_network_os=ios
